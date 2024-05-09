@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report Manager</title>
+
+    <style>
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    max-width: 350px;
+    margin: 50px auto;
+    text-align: center;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+input[type="text"],
+select,
+button,
+input[type="date"] {
+    width: 90%;
+    margin-bottom: 10px;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+button {
+    background-color: #007bff;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+#CAE {
+    width: 15%;
+    position: fixed;
+    right: 20px;
+    top: 55px;
+}
+
+#message {
+    margin-top: 10px;
+}
+
+h1, h2 {
+    color: #007bff;
+    margin-top: 30px;
+    text-align: center;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+table, th, td {
+    border: 1px solid #ddd;
+}
+
+th, td {
+    padding: 10px;
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+}
+
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background-color: #007bff;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 5px;
+    display: none; /* Hide by default */
+    z-index: 9999; /* Ensure it's above other content */
+}
+
+.notification.show {
+    display: block; /* Show when it has the 'show' class */
+}
+
+
+
+    </style>
+
+</head>
+<body>
+    <h1>CultureMx</h1>
+    <div class="container">
+        <label for="patientName">Patient's Name:</label>
+        <input type="text" id="patientName"><br>
+        <label for="cultureType">Select Culture Type:</label>
+        <select id="cultureType">
+            <option>Select</option>
+            <option value="blood">Blood Culture</option>
+            <option value="urine">Urine Culture</option>
+            <option value="tt">TT Culture</option>
+            <option value="wound">Wound Culture</option>
+        </select><br>
+        <label for="sendDate">Culture Sent Date:</label>
+        <input type="date" id="sendDate" value="<?php echo date('Y-m-d'); ?>">
+        <button onclick="scheduleReport()">Schedule Report</button>
+        <div id="message"></div>
+        <div id="confirmationMessage"></div> 
+    </div>
+
+    <button id="CAE" onclick="clearAllEntries()">Reset</button>
+
+    <h2>Report Entries</h2>
+    <table id="reportTable">
+        <thead>
+            <tr>
+                <th>Patient's Name</th>
+                <th>Culture Type</th>
+                <th>Sent Date</th>
+                <th>Report Date</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="reportTableBody">
+            <!-- Report entries will be added here -->
+        </tbody>
+    </table>
+
+
+    <div id="notification" class="notification"></div>
+
+    <script type="text/javascript">
+
+        // Retrieve saved entries from local storage on page load
+        window.onload = function() {
+            checkReminders(); 
+            loadEntriesFromStorage();
+        };
+
+        // Function to load entries from local storage
+        function loadEntriesFromStorage() {
+            var entries = JSON.parse(localStorage.getItem("reportEntries"));
+            if (entries) {
+                entries.forEach(function(entry) {
+                    addEntryToTable(entry.patientName, entry.cultureType, entry.sendDate, entry.reportDate);
+                });
+            }
+        }
+
+        function scheduleReport() {
+            var patientName = document.getElementById("patientName").value;
+            var cultureType = document.getElementById("cultureType").value;
+            var daysToWait = getDaysToWait(cultureType);
+            var sendDateInput = document.getElementById("sendDate");
+            var sendDate = new Date(sendDateInput.value);
+            var reportDate = new Date(sendDate.getTime() + (daysToWait * 24 * 60 * 60 * 1000));
+
+            // If the report date falls on a Sunday (day 0), add one more day to make it Monday
+            if (reportDate.getDay() === 0) {
+                reportDate.setDate(reportDate.getDate() + 1);
+            }
+
+            localStorage.setItem(cultureType + "_report_date", reportDate.toISOString());
+
+            var message = "Report scheduled for " + cultureType + ". It will be ready on " + reportDate.toDateString();
+            document.getElementById("message").innerText = message;
+
+            // Display a confirmation message
+            var confirmationMessage = "You will be reminded on " + reportDate.toDateString();
+            document.getElementById("confirmationMessage").innerText = confirmationMessage;
+
+            // Save the entry to local storage
+            saveEntryToStorage(patientName, cultureType, sendDate.toDateString(), reportDate.toDateString());
+
+            // Add entry to the table
+            addEntryToTable(patientName, cultureType, reportDate.toDateString(), sendDate.toDateString() );
+        }
+
+        function deleteEntry(button) {
+            var row = button.parentNode.parentNode;
+            var rowIndex = row.rowIndex;
+            row.parentNode.removeChild(row);
+
+            // Remove the entry from localStorage
+            var entries = JSON.parse(localStorage.getItem("reportEntries")) || [];
+            entries.splice(rowIndex - 1, 1); // Adjust index since table header is not included
+            localStorage.setItem("reportEntries", JSON.stringify(entries));
+        }
+
+        function addEntryToTable(patientName, cultureType, reportDate, sendDate) {
+             var tableBody = document.getElementById("reportTableBody");
+             var newRow = tableBody.insertRow();
+
+             var cell1 = newRow.insertCell(0);
+             var cell2 = newRow.insertCell(1);
+             var cell3 = newRow.insertCell(2);
+             var cell4 = newRow.insertCell(3);
+             var cell5 = newRow.insertCell(4);
+
+             cell1.innerText = patientName;
+             cell2.innerText = cultureType;
+             cell3.innerText = sendDate;
+             cell4.innerText = reportDate;
+
+            // Create delete button
+            var deleteButton = document.createElement("button");
+            deleteButton.innerText = "❌";
+            deleteButton.onclick = function() {
+                deleteEntry(this); // Pass the delete button element
+            };
+            cell5.appendChild(deleteButton);
+        }
+
+        function saveEntryToStorage(patientName, cultureType, sendDate, reportDate) {
+            var entry = {
+                patientName: patientName,
+                cultureType: cultureType,
+                sendDate: sendDate,
+                reportDate: reportDate
+            };
+
+            var entries = JSON.parse(localStorage.getItem("reportEntries")) || [];
+            entries.push(entry);
+            localStorage.setItem("reportEntries", JSON.stringify(entries));
+        }
+
+        function getDaysToWait(cultureType) {
+            switch (cultureType) {
+                case "blood":
+                    return 6;
+                case "urine":
+                    return 1;
+                case "tt":
+                case "wound":
+                    return 2;
+                default:
+                    return 0;
+            }
+        }
+
+        function clearAllEntries() {
+            var tableBody = document.getElementById("reportTableBody");
+            tableBody.innerHTML = ""; // Clear table body
+
+            // Clear all entries from localStorage
+            localStorage.removeItem("reportEntries");
+        }
+
+
+        function showNotification(patientName, cultureType, message) {
+            var notification = document.getElementById("notification");
+            notification.innerText = patientName + "'s " + cultureType + " culture " + message;
+            notification.classList.add("show");
+
+            // Hide the notification after a delay
+            setTimeout(function() {
+                notification.classList.remove("show");
+            }, 5000); // Adjust the delay as needed (e.g., 5000 milliseconds = 5 seconds)
+        }
+
+        // Function to check reminders
+        function checkReminders() {
+            var currentDate = new Date();
+            var cultureTypes = ["blood", "urine", "tt", "wound"];
+
+            cultureTypes.forEach(function(cultureType) {
+                var reportDate = new Date(localStorage.getItem(cultureType + "_report_date"));
+                if (reportDate && currentDate.toDateString() === reportDate.toDateString()) {
+                    var reminderMessage = "will be ready today!";
+                    // Get the patient's name from localStorage
+                    var entries = JSON.parse(localStorage.getItem("reportEntries")) || [];
+                    entries.forEach(function(entry) {
+                        if (entry.cultureType === cultureType) {
+                            showNotification(entry.patientName, entry.cultureType, reminderMessage);
+                        }
+                    });
+                }
+            });
+        }
+
+    </script>
+
+</body>
+</html>
